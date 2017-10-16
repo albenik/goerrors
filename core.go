@@ -1,7 +1,8 @@
 package errors
 
 import (
-	goerrors "errors"
+	"bytes"
+	native "errors"
 	"fmt"
 	"io"
 	"runtime"
@@ -9,29 +10,30 @@ import (
 
 type Detailed interface {
 	error
+	WithAnnotation(string) Detailed
+	CausedBy(error) Detailed
 	Origin() error
 }
 
-type DetailedWithoutCause interface {
-	Detailed
-	CausedBy(cause error) DetailedWithCause
-}
-
-type DetailedWithCause interface {
-	Detailed
-	Cause() error
-}
-
 type detailed struct {
-	origin error
-	cause  error
-	file   string
-	line   int
-	fn     string
+	origin     error
+	annotation string
+	file       string
+	line       int
+	fn         string
+	list       []error
 }
 
-func (err *detailed) CausedBy(cause error) DetailedWithCause {
-	err.cause = cause
+func (err *detailed) WithAnnotation(text string) Detailed {
+	err.annotation = text
+	return err
+}
+
+func (err *detailed) CausedBy(cause error) Detailed {
+	if err.list == nil {
+		err.list = make([]error, 0, 1)
+	}
+	err.list = append(err.list, cause)
 	return err
 }
 
@@ -39,64 +41,71 @@ func (err *detailed) Origin() error {
 	return err.origin
 }
 
-func (err *detailed) Cause() error {
-	return err.cause
-}
-
 func (err *detailed) Error() string {
-	if err.cause != nil {
-		return err.origin.Error() + " caused by " + err.cause.Error()
+	buf := new(bytes.Buffer)
+	if len(err.annotation) > 0 {
+		buf.WriteString(err.annotation)
+		buf.WriteString(": ")
 	}
-	return err.origin.Error()
+	buf.WriteString(err.origin.Error())
+	for _, cause := range err.list {
+		buf.WriteString(" caused by ")
+		buf.WriteString(cause.Error())
+	}
+	return buf.String()
 }
 
 func (err *detailed) Format(s fmt.State, verb rune) {
+	if len(err.annotation) > 0 {
+		io.WriteString(s, err.annotation)
+		io.WriteString(s, ": ")
+	}
+	io.WriteString(s, err.origin.Error())
+
+	cv := string(verb)
 	switch verb {
 	case 'v':
 		switch {
 		case s.Flag('+'):
-			fmt.Fprintf(s, "%+v @ %s:%d", err.origin, err.file, err.line)
-			if err.cause != nil {
-				fmt.Fprintf(s, " caused by %+v", err.cause)
-			}
-			return
+			fmt.Fprintf(s, " @ %s:%d", err.file, err.line)
+			cv = "+v"
 		case s.Flag('#'):
-			fmt.Fprintf(s, "%#v @ %s in %s:%d", err.origin, err.fn, err.file, err.line)
-			if err.cause != nil {
-				fmt.Fprintf(s, " caused by %#v", err.cause)
-			}
-			return
+			fmt.Fprintf(s, " @ %s in %s:%d", err.fn, err.file, err.line)
+			cv = "#v"
 		}
 		fallthrough
 	case 's', 'q':
-		io.WriteString(s, err.Error())
-	}
-}
-
-func wrap(origin error) DetailedWithoutCause {
-	switch err := origin.(type) {
-	case DetailedWithoutCause:
-		return err
+		for _, cause := range err.list {
+			fmt.Fprintf(s, " caused by %"+cv, cause)
+		}
 	default:
-		pc, file, line, _ := runtime.Caller(2)
-		return &detailed{origin: err, file: trimGOPATH(file), line: line, fn: runtime.FuncForPC(pc).Name()}
+		fmt.Fprintf(s, "%%%c<%T>", verb, err)
 	}
 }
 
-func Wrap(origin error) DetailedWithoutCause {
-	return wrap(origin)
+func withDetails(err error) *detailed {
+	pc, file, line, _ := runtime.Caller(2)
+	return &detailed{origin: err, file: trimGOPATH(file), line: line, fn: runtime.FuncForPC(pc).Name()}
 }
 
-func New(text string) DetailedWithoutCause {
-	return wrap(goerrors.New(text))
-}
-
-func Unwrap(err error) error {
-	switch t := err.(type) {
+func Wrap(err error) Detailed {
+	switch e := err.(type) {
 	case Detailed:
-		return t.Origin()
-	case DetailedWithCause:
-		return t.Origin()
+		return e
+	default:
+		return withDetails(err)
 	}
-	return err
+}
+
+func New(text string) Detailed {
+	return withDetails(native.New(text))
+}
+
+func Origin(err error) error {
+	switch e := err.(type) {
+	case Detailed:
+		return e.Origin()
+	default:
+		return err
+	}
 }
