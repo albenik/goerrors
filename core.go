@@ -102,10 +102,9 @@ func New(text string) Detailed {
 }
 
 func Origin(err error) error {
-	switch e := err.(type) {
-	case Detailed:
-		return e.Origin()
-	default:
+	if det, ok := err.(Detailed); ok {
+		return Origin(det.Origin())
+	} else {
 		return err
 	}
 }
