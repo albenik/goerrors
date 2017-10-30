@@ -56,30 +56,26 @@ func (err *detailed) Error() string {
 }
 
 func (err *detailed) Format(s fmt.State, verb rune) {
+	if verb == 'q' {
+		fmt.Fprint(s, "\"")
+	}
 	if len(err.annotation) > 0 {
 		io.WriteString(s, err.annotation)
 		io.WriteString(s, ": ")
 	}
 	io.WriteString(s, err.origin.Error())
 
-	cv := string(verb)
 	switch verb {
-	case 'v':
-		switch {
-		case s.Flag('+'):
-			fmt.Fprintf(s, " @ %s:%d", err.file, err.line)
-			cv = "+v"
-		case s.Flag('#'):
-			fmt.Fprintf(s, " @ %s in %s:%d", err.fn, err.file, err.line)
-			cv = "#v"
-		}
-		fallthrough
-	case 's', 'q':
+	case 'v', 's', 'q':
+		fmt.Fprintf(s, " @ %s:%d", err.file, err.line)
 		for _, cause := range err.list {
-			fmt.Fprintf(s, " caused by %"+cv, cause)
+			fmt.Fprintf(s, " caused by %v", cause)
 		}
 	default:
-		fmt.Fprintf(s, "%%%c<%T>", verb, err)
+		fmt.Fprintf(s, "%%%c(invalid for %T)", verb, err)
+	}
+	if verb == 'q' {
+		fmt.Fprint(s, "\"")
 	}
 }
 
@@ -99,6 +95,10 @@ func Wrap(err error) Detailed {
 
 func New(text string) Detailed {
 	return withDetails(native.New(text))
+}
+
+func Newf(format string, a ...interface{}) Detailed {
+	return withDetails(fmt.Errorf(format, a...))
 }
 
 func Origin(err error) error {
