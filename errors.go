@@ -2,6 +2,7 @@ package errors
 
 import (
 	"bytes"
+	native "errors"
 	"fmt"
 	"runtime"
 )
@@ -10,6 +11,7 @@ type DetailedError interface {
 	error
 	Origin() error
 	Inherit(error) DetailedError
+	InheritNative(string) DetailedError
 	CausedBy(error) DetailedError
 }
 
@@ -33,6 +35,11 @@ func (e *detailed) Inherit(other error) DetailedError {
 	default:
 		e.origin = err
 	}
+	return e
+}
+
+func (e *detailed) InheritNative(text string) DetailedError {
+	e.origin = native.New(text)
 	return e
 }
 
