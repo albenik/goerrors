@@ -1,93 +1,62 @@
 package errors
 
 import (
-	"bytes"
-	native "errors"
+	"errors"
 	"fmt"
 	"runtime"
+	"strings"
 )
 
-type DetailedError interface {
-	error
-	Origin() error
-	Inherit(error) DetailedError
-	InheritNative(string) DetailedError
-	CausedBy(error) DetailedError
+type DetailedError struct {
+	base    error
+	file    string
+	line    int
+	related []error
 }
 
-type detailed struct {
-	text   string
-	file   string
-	line   int
-	origin error
-	cause  error
-}
-
-func (e *detailed) Origin() error {
-	return e.origin
-}
-
-func (e *detailed) Inherit(other error) DetailedError {
-	switch err := other.(type) {
-	case DetailedError:
-		e.origin = err.Origin()
-		e.cause = other
-	default:
-		e.origin = err
+func (e *DetailedError) Error() string {
+	if len(e.related) == 0 {
+		return fmt.Sprintf("%s @ %s:%d", e.base.Error(), e.file, e.line)
 	}
+	s := make([]string, 0, len(e.related))
+	for _, e2 := range e.related {
+		s = append(s, e2.Error())
+	}
+	return fmt.Sprintf("%s @ %s:%d with errors: [%s]", e.base.Error(), e.file, e.line, strings.Join(s, "; "))
+}
+
+func (e *DetailedError) AppendRelated(err ...error) *DetailedError {
+	e.related = append(e.related, err...)
 	return e
 }
 
-func (e *detailed) InheritNative(text string) DetailedError {
-	e.origin = native.New(text)
-	return e
+func New(s string) error {
+	return errors.New(s)
 }
 
-func (e *detailed) CausedBy(other error) DetailedError {
-	e.cause = other
-	return e
+func Newf(format string, a ...interface{}) error {
+	return errors.New(fmt.Sprintf(format, a...))
 }
 
-func (e *detailed) Error() string {
-	buf := bytes.NewBufferString(e.text)
-	fmt.Fprintf(buf, " @ %s:%d", e.file, e.line)
-	if e.origin != nil && e.origin != Origin(e.cause) {
-		fmt.Fprint(buf, " inhertis ", e.origin.Error())
-	}
-	if e.cause != nil {
-		fmt.Fprint(buf, " caused by ", e.cause.Error())
-	}
-	return buf.String()
-}
-
-func (e *detailed) Format(s fmt.State, verb rune) {
-	if verb == 'q' {
-		fmt.Fprint(s, "\"")
-	}
-	switch verb {
-	case 'v', 's', 'q':
-		fmt.Fprintf(s, e.Error())
-	default:
-		fmt.Fprint(s, "%", string(verb), "(invalid for error ", e.Error(), ")")
-	}
-	if verb == 'q' {
-		fmt.Fprint(s, "\"")
-	}
-}
-
-func New(text string) DetailedError {
+func WithDetails(err error) *DetailedError {
 	_, file, line, _ := runtime.Caller(1)
-	return &detailed{text: text, file: trimGOPATH(file), line: line}
+	return &DetailedError{base: err, file: trimGOPATH(file), line: line}
 }
 
-func Newf(format string, a ...interface{}) DetailedError {
-	return New(fmt.Sprintf(format, a...))
-}
-
-func Origin(err error) error {
-	if e, ok := err.(DetailedError); ok {
-		return e.Origin()
+func Base(err error) error {
+	if e, ok := err.(*DetailedError); ok {
+		return e.base
 	} else {
+		return err
+	}
+}
+
+func NativeBase(err error) error {
+	for {
+		if detailed, ok := err.(*DetailedError); ok {
+			err = detailed.base
+			continue
+		}
 		return err
 	}
 }

@@ -1,28 +1,39 @@
-package errors
+package errors_test
 
 import (
 	"fmt"
 	"testing"
+
+	"github.com/albenik/goerrors"
+	"github.com/stretchr/testify/assert"
 )
 
-func p(err error) {
-	fmt.Println(err)
-	fmt.Printf("%s\n", err)
-	fmt.Printf("%q\n", err)
-	fmt.Printf("%+v\n", err)
-	fmt.Printf("%#v\n\n", err)
-}
+func TestDetailedError_Error(t *testing.T) {
+	err1 := errors.New("error 1")
+	err1d := errors.WithDetails(err1)
 
-func TestDetailed_CausedBy(t *testing.T) {
-	err1 := New("error 1")
-	p(err1)
+	assert.Equal(t, err1, errors.Base(err1))
+	assert.Equal(t, err1, errors.NativeBase(err1))
 
-	err2 := New("error 2").WithAnnotation("annotation 2")
-	p(err2)
+	assert.Equal(t, err1, errors.Base(err1d))
+	assert.Equal(t, err1, errors.NativeBase(err1d))
 
-	err3 := New("error 3").WithAnnotation("annotation 3").CausedBy(err2)
-	p(err3)
+	fmt.Println(err1)
+	fmt.Println(err1d)
 
-	err4 := New("error 4").WithAnnotation("annotaion 4").CausedBy(err3).CausedBy(err1)
-	p(err4)
+	err2 := errors.New("error 2")
+	err2d := errors.WithDetails(err2)
+	err2d.AppendRelated(errors.WithDetails(errors.New("suberror 1")), errors.New("suberror 2"))
+
+	fmt.Println(err2d)
+
+	err3 := errors.New("error 3")
+	err3d := errors.WithDetails(err3).AppendRelated(errors.WithDetails(errors.New("suberror 3.1")))
+	err3d = errors.WithDetails(err3d).AppendRelated(errors.WithDetails(errors.New("suberror 3.2")))
+	err3d = errors.WithDetails(err3d).AppendRelated(errors.WithDetails(errors.New("suberror 3.3")))
+	err3d = errors.WithDetails(err3d).AppendRelated(errors.WithDetails(errors.New("suberror 3.4")))
+
+	assert.Equal(t, err3, errors.NativeBase(err3d))
+
+	fmt.Println(err3d)
 }

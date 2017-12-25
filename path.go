@@ -5,12 +5,14 @@ import (
 	"strings"
 )
 
-var gopath string
-var gopathlen int
+var (
+	gopath    string
+	gopathlen int
+)
 
 func init() {
 	pc, file, _, ok := runtime.Caller(0)
-	if file == "?" || !ok {
+	if !ok || file == "?" {
 		return
 	}
 	fn := runtime.FuncForPC(pc)
