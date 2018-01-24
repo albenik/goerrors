@@ -1,6 +1,7 @@
 package errors
 
 import (
+	"path/filepath"
 	"runtime"
 	"strings"
 )
@@ -33,5 +34,5 @@ func trimGOPATH(filename string) string {
 	if strings.HasPrefix(filename, gopath) {
 		return filename[gopathlen:]
 	}
-	return filename
+	return filepath.Base(filename)
 }

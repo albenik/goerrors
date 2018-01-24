@@ -13,10 +13,8 @@ func TestDetailedError_Error(t *testing.T) {
 	err1d := errors.WithDetails(err1)
 
 	assert.Equal(t, err1, errors.Base(err1))
-	assert.Equal(t, err1, errors.NativeBase(err1))
 
 	assert.Equal(t, err1, errors.Base(err1d))
-	assert.Equal(t, err1, errors.NativeBase(err1d))
 
 	fmt.Println(err1)
 	fmt.Println(err1d)
@@ -33,7 +31,7 @@ func TestDetailedError_Error(t *testing.T) {
 	err3d = errors.WithDetails(err3d).AppendRelated(errors.WithDetails(errors.New("suberror 3.3")))
 	err3d = errors.WithDetails(err3d).AppendRelated(errors.WithDetails(errors.New("suberror 3.4")))
 
-	assert.Equal(t, err3, errors.NativeBase(err3d))
+	assert.Equal(t, err3, errors.Base(err3d))
 
 	fmt.Println(err3d)
 }
