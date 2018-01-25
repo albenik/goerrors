@@ -2,7 +2,6 @@ package errors
 
 import (
 	"bytes"
-	"errors"
 	"fmt"
 	"io"
 	"runtime"
@@ -10,6 +9,7 @@ import (
 
 type DetailedError struct {
 	base    error
+	msg     string
 	file    string
 	line    int
 	related []error
@@ -29,9 +29,12 @@ func (e *DetailedError) relatedString() string {
 
 func (e *DetailedError) Error() string {
 	if len(e.related) == 0 {
-		return fmt.Sprintf("%s @ %s:%d", e.base.Error(), e.file, e.line)
+		if e.base == nil {
+			return fmt.Sprintf("%s @ %s:%d", e.msg, e.file, e.line)
+		}
+		return fmt.Sprintf("%s @ %s:%d: %v", e.msg, e.file, e.line, e.base)
 	}
-	return fmt.Sprintf("%s @ %s:%d | %s", e.base.Error(), e.file, e.line, e.relatedString())
+	return fmt.Sprintf("%s @ %s:%d: %v | %s", e.msg, e.file, e.line, e.base, e.relatedString())
 }
 
 func (e *DetailedError) Format(s fmt.State, verb rune) {
@@ -40,45 +43,51 @@ func (e *DetailedError) Format(s fmt.State, verb rune) {
 		plusFlag := s.Flag('+')
 		sharpFlag := s.Flag('#')
 		if plusFlag || sharpFlag {
-			fmt.Fprintf(s, "%s @ %s:%d", e.base.Error(), e.file, e.line)
-			if sharpFlag {
-				if len(e.related) > 0 {
-					fmt.Fprint(s, "\nRelated errors:\n")
-					for _, err := range e.related {
-						fmt.Fprint(s, "  ", err.Error(), "\n")
-					}
-				}
+			if e.base == nil {
+				fmt.Fprintf(s, "%s @ %s:%d", e.msg, e.file, e.line)
 			} else {
-				fmt.Fprint(s, " | ", e.relatedString())
+				fmt.Fprintf(s, "%s @ %s:%d: %s", e.msg, e.file, e.line, e.base)
 			}
-			if len(e.stack) > 0 {
+			if len(e.related) > 0 {
 				if sharpFlag {
-					fmt.Fprint(s, "Call stack:")
+					fmt.Fprint(s, "\nRelated errors:")
+					for _, err := range e.related {
+						fmt.Fprint(s, "\n  ", err.Error())
+					}
 				} else {
-					fmt.Fprint(s, " | call stack:")
+					fmt.Fprint(s, " | ", e.relatedString())
 				}
-				frames := runtime.CallersFrames(e.stack)
-				for {
-					fr, more := frames.Next()
-					if !more {
-						break
-					}
-					if sharpFlag {
-						fmt.Fprint(s, "\n  ")
-					} else {
-						fmt.Fprint(s, " {")
-					}
-					fmt.Fprint(s, fr.Function, " @ ", trimGOPATH(fr.File), ":", fr.Line)
-					if !sharpFlag {
-						fmt.Fprint(s, "}")
-					}
+			}
+			if sharpFlag {
+				fmt.Fprint(s, "\nCall stack:")
+			} else {
+				fmt.Fprint(s, " | call stack:")
+			}
+			frames := runtime.CallersFrames(e.stack)
+			for {
+				fr, more := frames.Next()
+				if !more {
+					break
+				}
+				if sharpFlag {
+					fmt.Fprint(s, "\n  ")
+				} else {
+					fmt.Fprint(s, " {")
+				}
+				fmt.Fprint(s, fr.Function, " @ ", trimGOPATH(fr.File), ":", fr.Line)
+				if !sharpFlag {
+					fmt.Fprint(s, "}")
 				}
 			}
 			return
 		}
 		fallthrough
 	case 's', 'q':
-		io.WriteString(s, e.Error())
+		if verb == 'q' {
+			fmt.Fprintf(s, "%q", e.Error())
+		} else {
+			io.WriteString(s, e.Error())
+		}
 	}
 }
 
@@ -87,32 +96,38 @@ func (e *DetailedError) AppendRelated(err ...error) *DetailedError {
 	return e
 }
 
-func New(s string) error {
-	return errors.New(s)
-}
-
-func Newf(format string, a ...interface{}) error {
-	return errors.New(fmt.Sprintf(format, a...))
-}
-
-func WithDetails(err error) *DetailedError {
+func newError(msg string) *DetailedError {
 	var file string
 	var line int
 	pc := make([]uintptr, 7)
-	n := runtime.Callers(2, pc)
+	n := runtime.Callers(3, pc)
 	if n > 0 {
 		stack := runtime.CallersFrames(pc[:n])
 		f, _ := stack.Next()
 		file = trimGOPATH(f.File)
 		line = f.Line
 	}
-	return &DetailedError{base: err, file: trimGOPATH(file), line: line, stack: pc[:n]}
+	return &DetailedError{msg: msg, file: file, line: line, stack: pc[:n]}
+}
+
+func New(msg string) error {
+	return newError(msg)
+}
+
+func Newf(format string, a ...interface{}) error {
+	return newError(fmt.Sprintf(format, a...))
+}
+
+func Wrap(err error, msg string) *DetailedError {
+	e := newError(msg)
+	e.base = err
+	return e
 }
 
 func Base(err error) error {
 	for err != nil {
 		detailed, ok := err.(*DetailedError)
-		if !ok {
+		if !ok || detailed.base == nil {
 			break
 		}
 		err = detailed.base
