@@ -1,40 +1,24 @@
 package errors
 
 import (
-	"bytes"
 	"fmt"
 	"io"
 	"runtime"
 )
 
 type DetailedError struct {
-	base    error
-	msg     string
-	file    string
-	line    int
-	related []error
-	stack   []uintptr
-}
-
-func (e *DetailedError) relatedString() string {
-	buf := new(bytes.Buffer)
-	if len(e.related) > 0 {
-		fmt.Fprint(buf, "related errors:")
-		for _, err := range e.related {
-			fmt.Fprint(buf, " {", err.Error(), "}")
-		}
-	}
-	return buf.String()
+	base  error
+	msg   string
+	file  string
+	line  int
+	stack []uintptr
 }
 
 func (e *DetailedError) Error() string {
-	if len(e.related) == 0 {
-		if e.base == nil {
-			return fmt.Sprintf("%s @ %s:%d", e.msg, e.file, e.line)
-		}
-		return fmt.Sprintf("%s @ %s:%d: %v", e.msg, e.file, e.line, e.base)
+	if e.base == nil {
+		return fmt.Sprintf("%s @ %s:%d", e.msg, e.file, e.line)
 	}
-	return fmt.Sprintf("%s @ %s:%d: %v | %s", e.msg, e.file, e.line, e.base, e.relatedString())
+	return fmt.Sprintf("%s: %s @ %s:%d", e.msg, e.base.Error(), e.file, e.line)
 }
 
 func (e *DetailedError) Format(s fmt.State, verb rune) {
@@ -48,16 +32,7 @@ func (e *DetailedError) Format(s fmt.State, verb rune) {
 			} else {
 				fmt.Fprintf(s, "%s @ %s:%d: %s", e.msg, e.file, e.line, e.base)
 			}
-			if len(e.related) > 0 {
-				if sharpFlag {
-					fmt.Fprint(s, "\nRelated errors:")
-					for _, err := range e.related {
-						fmt.Fprint(s, "\n  ", err.Error())
-					}
-				} else {
-					fmt.Fprint(s, " | ", e.relatedString())
-				}
-			}
+
 			if sharpFlag {
 				fmt.Fprint(s, "\nCall stack:")
 			} else {
@@ -89,11 +64,6 @@ func (e *DetailedError) Format(s fmt.State, verb rune) {
 			io.WriteString(s, e.Error())
 		}
 	}
-}
-
-func (e *DetailedError) AppendRelated(err ...error) *DetailedError {
-	e.related = append(e.related, err...)
-	return e
 }
 
 func newError(msg string) *DetailedError {
